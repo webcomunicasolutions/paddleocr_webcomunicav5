@@ -2,7 +2,7 @@
 
 ## Estado Actual
 
-**Versión:** v5.1 (2272 líneas)
+**Versión:** v5.2 (2290 líneas)
 **Repositorio:** https://github.com/webcomunicasolutions/paddleocr_webcomunicav5
 **Puerto:** 8505
 **Rendimiento:** 2.5x más rápido que versión extendida (12-18s vs 45s)

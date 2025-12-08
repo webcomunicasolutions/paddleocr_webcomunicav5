@@ -1809,6 +1809,23 @@ END_TABLE_PATTERNS = [
 ]
 
 
+# v5.2: Función para detectar filas de datos de tabla (Agente 2)
+def is_potential_data_row(line):
+    """
+    Detecta si una línea parece ser fila de datos de tabla.
+    Útil para tablas sin headers claros o con formato no estándar.
+    """
+    # Contiene números que parecen precios (formato X,XX o X.XX)
+    has_prices = bool(re_module.search(r'\d+[,\.]\d{2}', line))
+    # Tiene múltiples "columnas" separadas por espacios (mínimo 3 tokens)
+    tokens = line.split()
+    has_columns = len(tokens) >= 3
+    # Contiene cantidades típicas de factura
+    has_quantity = bool(re_module.search(r'\b[1-9]\d{0,2}\b', line))
+
+    return has_prices and (has_columns or has_quantity)
+
+
 def format_text_with_layout_simple(text_blocks, coordinates, page_width=200):
     """
     Reconstruye estructura espacial del documento (version simplificada v5).
@@ -1853,6 +1870,7 @@ def format_text_with_layout_simple(text_blocks, coordinates, page_width=200):
         return '\n'.join(text_blocks)
 
     # 2. Agrupar bloques en filas por Y similar
+    # v5.2: Probado 1.2 y 0.9 (ambos REGRESIÓN) - 0.7 es óptimo
     avg_height = sum(b['height'] for b in blocks) / len(blocks)
     row_tolerance = avg_height * 0.7
 
@@ -1870,10 +1888,11 @@ def format_text_with_layout_simple(text_blocks, coordinates, page_width=200):
     rows.append(current_row)
 
     # 3. Detectar tabla
+    # v5.2: Reducido de >=3 a >=2 para detectar tablas pequeñas (Agente 2)
     header_row_idx = -1
     data_rows = []
 
-    if len(rows) >= 3:
+    if len(rows) >= 2:
         # Buscar fila de headers
         for row_idx, row in enumerate(rows):
             row_text = ' '.join(b['text'] for b in row).upper()
@@ -1893,8 +1912,8 @@ def format_text_with_layout_simple(text_blocks, coordinates, page_width=200):
                 if any(re_module.search(p, row_text) for p in END_TABLE_PATTERNS):
                     break
 
-                # Si tiene precios, es fila de datos
-                if PRICE_PATTERN.findall(row_text):
+                # v5.2: Usar is_potential_data_row() o PRICE_PATTERN (Agente 2)
+                if PRICE_PATTERN.findall(row_text) or is_potential_data_row(row_text):
                     data_rows.append(row_idx)
 
     is_table = header_row_idx >= 0 and len(data_rows) >= 1

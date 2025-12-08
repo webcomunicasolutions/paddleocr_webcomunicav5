@@ -1,6 +1,11 @@
-# PaddleOCR WebComunica v5.1
+# PaddleOCR WebComunica v5.2
 
 OCR minimalista y eficiente basado en PaddleOCR 3.x con API REST profesional.
+
+## Cambios v5.2
+- Detección de tablas con mínimo 2 filas (antes 3)
+- Nueva función `is_potential_data_row()` para detectar filas de datos
+- Registro de mejoras en [MEJORAS.md](MEJORAS.md)
 
 ## Cambios v5.1
 - Parámetros OCR optimizados para reducir fragmentación
