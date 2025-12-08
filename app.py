@@ -2250,6 +2250,157 @@ def stats():
     })
 
 
+# ============================================================================
+# DASHBOARD WEB (v5)
+# ============================================================================
+
+@app.route('/')
+def dashboard():
+    """Dashboard web para probar OCR"""
+    return '''<!DOCTYPE html>
+<html lang="es">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PaddleOCR WebComunica v5</title>
+    <style>
+        * { box-sizing: border-box; margin: 0; padding: 0; }
+        body { font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+               background: #1a1a2e; color: #eee; min-height: 100vh; padding: 20px; }
+        .container { max-width: 1200px; margin: 0 auto; }
+        h1 { color: #00d4ff; margin-bottom: 10px; }
+        .subtitle { color: #888; margin-bottom: 30px; }
+        .upload-area { background: #16213e; border: 2px dashed #00d4ff; border-radius: 12px;
+                       padding: 40px; text-align: center; margin-bottom: 20px; cursor: pointer; }
+        .upload-area:hover { background: #1a2a4e; }
+        .upload-area.dragover { background: #0f3460; border-color: #00ff88; }
+        input[type="file"] { display: none; }
+        .btn { background: #00d4ff; color: #1a1a2e; border: none; padding: 12px 30px;
+               border-radius: 8px; font-size: 16px; cursor: pointer; font-weight: bold; }
+        .btn:hover { background: #00a8cc; }
+        .btn:disabled { background: #555; cursor: not-allowed; }
+        .options { display: flex; gap: 20px; margin: 20px 0; justify-content: center; }
+        .option { display: flex; align-items: center; gap: 8px; }
+        .result { background: #16213e; border-radius: 12px; padding: 20px; margin-top: 20px; display: none; }
+        .result h3 { color: #00d4ff; margin-bottom: 15px; }
+        .stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 15px; margin-bottom: 20px; }
+        .stat { background: #0f3460; padding: 15px; border-radius: 8px; text-align: center; }
+        .stat-value { font-size: 24px; color: #00d4ff; font-weight: bold; }
+        .stat-label { font-size: 12px; color: #888; }
+        .text-output { background: #0a0a15; padding: 20px; border-radius: 8px;
+                       white-space: pre-wrap; font-family: monospace; font-size: 13px;
+                       max-height: 500px; overflow-y: auto; line-height: 1.4; }
+        .loading { display: none; text-align: center; padding: 40px; }
+        .spinner { border: 4px solid #333; border-top: 4px solid #00d4ff; border-radius: 50%;
+                   width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
+        @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
+        .error { background: #3d1515; border: 1px solid #ff4444; color: #ff6666; padding: 15px; border-radius: 8px; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>PaddleOCR WebComunica v5</h1>
+        <p class="subtitle">OCR minimalista con deteccion de tablas</p>
+
+        <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
+            <p style="font-size: 48px; margin-bottom: 15px;">📄</p>
+            <p style="font-size: 18px; margin-bottom: 10px;">Arrastra un PDF o imagen aqui</p>
+            <p style="color: #888;">o haz clic para seleccionar</p>
+            <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp">
+        </div>
+
+        <div class="options">
+            <label class="option">
+                <input type="radio" name="format" value="layout" checked> Layout (tablas)
+            </label>
+            <label class="option">
+                <input type="radio" name="format" value="normal"> Normal (texto plano)
+            </label>
+        </div>
+
+        <div style="text-align: center;">
+            <button class="btn" id="processBtn" disabled>Procesar documento</button>
+        </div>
+
+        <div class="loading" id="loading">
+            <div class="spinner"></div>
+            <p>Procesando documento...</p>
+        </div>
+
+        <div class="result" id="result">
+            <h3>Resultado</h3>
+            <div class="stats" id="stats"></div>
+            <div class="text-output" id="textOutput"></div>
+        </div>
+    </div>
+
+    <script>
+        const dropZone = document.getElementById('dropZone');
+        const fileInput = document.getElementById('fileInput');
+        const processBtn = document.getElementById('processBtn');
+        const loading = document.getElementById('loading');
+        const result = document.getElementById('result');
+        let selectedFile = null;
+
+        ['dragenter', 'dragover', 'dragleave', 'drop'].forEach(e => {
+            dropZone.addEventListener(e, ev => { ev.preventDefault(); ev.stopPropagation(); });
+        });
+        dropZone.addEventListener('dragover', () => dropZone.classList.add('dragover'));
+        dropZone.addEventListener('dragleave', () => dropZone.classList.remove('dragover'));
+        dropZone.addEventListener('drop', e => {
+            dropZone.classList.remove('dragover');
+            if (e.dataTransfer.files.length) handleFile(e.dataTransfer.files[0]);
+        });
+        fileInput.addEventListener('change', e => { if (e.target.files.length) handleFile(e.target.files[0]); });
+
+        function handleFile(file) {
+            selectedFile = file;
+            dropZone.innerHTML = `<p style="font-size: 48px; margin-bottom: 15px;">✅</p>
+                <p style="font-size: 18px;">${file.name}</p>
+                <p style="color: #888;">${(file.size / 1024).toFixed(1)} KB</p>`;
+            processBtn.disabled = false;
+        }
+
+        processBtn.addEventListener('click', async () => {
+            if (!selectedFile) return;
+            const format = document.querySelector('input[name="format"]:checked').value;
+            const formData = new FormData();
+            formData.append('file', selectedFile);
+            formData.append('format', format);
+
+            loading.style.display = 'block';
+            result.style.display = 'none';
+            processBtn.disabled = true;
+
+            try {
+                const response = await fetch('/process', { method: 'POST', body: formData });
+                const data = await response.json();
+
+                if (data.success) {
+                    document.getElementById('stats').innerHTML = `
+                        <div class="stat"><div class="stat-value">${data.stats.processing_time}s</div><div class="stat-label">Tiempo</div></div>
+                        <div class="stat"><div class="stat-value">${(data.stats.avg_confidence * 100).toFixed(1)}%</div><div class="stat-label">Confianza</div></div>
+                        <div class="stat"><div class="stat-value">${data.stats.total_blocks}</div><div class="stat-label">Bloques</div></div>
+                        <div class="stat"><div class="stat-value">${data.stats.total_pages}</div><div class="stat-label">Paginas</div></div>`;
+                    document.getElementById('textOutput').textContent = data.text;
+                    result.style.display = 'block';
+                } else {
+                    document.getElementById('textOutput').innerHTML = `<div class="error">${data.error || 'Error desconocido'}</div>`;
+                    result.style.display = 'block';
+                }
+            } catch (err) {
+                document.getElementById('stats').innerHTML = '';
+                document.getElementById('textOutput').innerHTML = `<div class="error">Error: ${err.message}</div>`;
+                result.style.display = 'block';
+            }
+            loading.style.display = 'none';
+            processBtn.disabled = false;
+        });
+    </script>
+</body>
+</html>'''
+
+
 if __name__ == '__main__':
     port = int(os.getenv('FLASK_PORT', '8503'))
     logger.info("[START] Iniciando PaddlePaddle CPU Document Preprocessor...")
