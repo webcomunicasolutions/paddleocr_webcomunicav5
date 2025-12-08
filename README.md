@@ -1,6 +1,11 @@
-# PaddleOCR WebComunica v5
+# PaddleOCR WebComunica v5.1
 
 OCR minimalista y eficiente basado en PaddleOCR 3.x con API REST profesional.
+
+## Cambios v5.1
+- Parámetros OCR optimizados para reducir fragmentación
+- Mejor separación de palabras en documentos escaneados
+- +1% confianza OCR promedio
 
 ## Características
 

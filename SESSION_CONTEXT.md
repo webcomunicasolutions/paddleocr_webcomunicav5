@@ -2,10 +2,21 @@
 
 ## Estado Actual
 
-**Versión:** v5.0 (2272 líneas)
+**Versión:** v5.1 (2272 líneas)
 **Repositorio:** https://github.com/webcomunicasolutions/paddleocr_webcomunicav5
 **Puerto:** 8505
 **Rendimiento:** 2.5x más rápido que versión extendida (12-18s vs 45s)
+
+### Cambios v5.1 (08/12/2025)
+**Parámetros OCR optimizados según análisis de Agentes Opus:**
+- OCR_TEXT_DET_THRESH: 0.05 → 0.25 (reduce fragmentación)
+- OCR_TEXT_DET_BOX_THRESH: 0.2 → 0.4 (mejor filtrado)
+- OCR_TEXT_DET_UNCLIP_RATIO: 1.5 → 2.0 (menos cortes)
+
+**Mejoras observadas:**
+- Mejor separación de palabras ("CUATRO OLIVOS" vs "CUATROOLIVOS")
+- +1% confianza OCR (0.905 vs 0.895)
+- Tablas detectadas y formateadas correctamente
 
 ### Cambios v5.0 (08/12/2025)
 - Código base minimalista de Paco (1905 líneas)
