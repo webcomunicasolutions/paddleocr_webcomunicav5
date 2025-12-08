@@ -2306,7 +2306,7 @@ def stats():
 
 @app.route('/')
 def dashboard():
-    """Dashboard web para probar OCR"""
+    """Dashboard web para probar OCR con documentacion de API"""
     return '''<!DOCTYPE html>
 <html lang="es">
 <head>
@@ -2319,7 +2319,18 @@ def dashboard():
                background: #1a1a2e; color: #eee; min-height: 100vh; padding: 20px; }
         .container { max-width: 1200px; margin: 0 auto; }
         h1 { color: #00d4ff; margin-bottom: 10px; }
-        .subtitle { color: #888; margin-bottom: 30px; }
+        .subtitle { color: #888; margin-bottom: 20px; }
+
+        /* Tabs */
+        .tabs { display: flex; gap: 5px; margin-bottom: 20px; border-bottom: 2px solid #16213e; }
+        .tab { padding: 12px 24px; background: #16213e; border: none; color: #888; cursor: pointer;
+               border-radius: 8px 8px 0 0; font-size: 15px; transition: all 0.2s; }
+        .tab:hover { background: #1a2a4e; color: #ccc; }
+        .tab.active { background: #0f3460; color: #00d4ff; font-weight: bold; }
+        .tab-content { display: none; }
+        .tab-content.active { display: block; }
+
+        /* OCR Tab */
         .upload-area { background: #16213e; border: 2px dashed #00d4ff; border-radius: 12px;
                        padding: 40px; text-align: center; margin-bottom: 20px; cursor: pointer; }
         .upload-area:hover { background: #1a2a4e; }
@@ -2345,6 +2356,29 @@ def dashboard():
                    width: 40px; height: 40px; animation: spin 1s linear infinite; margin: 0 auto 20px; }
         @keyframes spin { 0% { transform: rotate(0deg); } 100% { transform: rotate(360deg); } }
         .error { background: #3d1515; border: 1px solid #ff4444; color: #ff6666; padding: 15px; border-radius: 8px; }
+
+        /* API Docs Tab */
+        .docs-section { background: #16213e; border-radius: 12px; padding: 20px; margin-bottom: 20px; }
+        .docs-section h2 { color: #00d4ff; margin-bottom: 15px; font-size: 20px; }
+        .docs-section h3 { color: #00ff88; margin: 20px 0 10px 0; font-size: 16px; }
+        .endpoint { background: #0f3460; border-radius: 8px; padding: 15px; margin: 10px 0; }
+        .endpoint-header { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+        .method { padding: 4px 10px; border-radius: 4px; font-weight: bold; font-size: 12px; }
+        .method.get { background: #00ff88; color: #000; }
+        .method.post { background: #ff9800; color: #000; }
+        .endpoint-path { font-family: monospace; color: #fff; font-size: 15px; }
+        .endpoint-desc { color: #aaa; font-size: 14px; margin-bottom: 10px; }
+        .code-block { background: #0a0a15; padding: 15px; border-radius: 8px; font-family: monospace;
+                      font-size: 13px; overflow-x: auto; margin: 10px 0; white-space: pre; }
+        .param-table { width: 100%; border-collapse: collapse; margin: 10px 0; font-size: 14px; }
+        .param-table th { text-align: left; padding: 8px; background: #0a0a15; color: #00d4ff; }
+        .param-table td { padding: 8px; border-bottom: 1px solid #333; }
+        .param-name { font-family: monospace; color: #00ff88; }
+        .param-type { color: #888; font-size: 12px; }
+        .copy-btn { background: #333; border: none; color: #888; padding: 5px 10px; border-radius: 4px;
+                    cursor: pointer; font-size: 12px; float: right; }
+        .copy-btn:hover { background: #444; color: #fff; }
+        .response-example { border-left: 3px solid #00d4ff; }
     </style>
 </head>
 <body>
@@ -2352,39 +2386,264 @@ def dashboard():
         <h1>PaddleOCR WebComunica v5</h1>
         <p class="subtitle">OCR minimalista con deteccion de tablas</p>
 
-        <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
-            <p style="font-size: 48px; margin-bottom: 15px;">📄</p>
-            <p style="font-size: 18px; margin-bottom: 10px;">Arrastra un PDF o imagen aqui</p>
-            <p style="color: #888;">o haz clic para seleccionar</p>
-            <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp">
+        <div class="tabs">
+            <button class="tab active" onclick="showTab('ocr')">OCR</button>
+            <button class="tab" onclick="showTab('docs')">API Docs</button>
         </div>
 
-        <div class="options">
-            <label class="option">
-                <input type="radio" name="format" value="layout" checked> Layout (tablas)
-            </label>
-            <label class="option">
-                <input type="radio" name="format" value="normal"> Normal (texto plano)
-            </label>
+        <!-- OCR Tab -->
+        <div id="ocr-tab" class="tab-content active">
+            <div class="upload-area" id="dropZone" onclick="document.getElementById('fileInput').click()">
+                <p style="font-size: 48px; margin-bottom: 15px;">📄</p>
+                <p style="font-size: 18px; margin-bottom: 10px;">Arrastra un PDF o imagen aqui</p>
+                <p style="color: #888;">o haz clic para seleccionar</p>
+                <input type="file" id="fileInput" accept=".pdf,.png,.jpg,.jpeg,.tiff,.bmp">
+            </div>
+
+            <div class="options">
+                <label class="option">
+                    <input type="radio" name="format" value="layout" checked> Layout (tablas)
+                </label>
+                <label class="option">
+                    <input type="radio" name="format" value="normal"> Normal (texto plano)
+                </label>
+            </div>
+
+            <div style="text-align: center;">
+                <button class="btn" id="processBtn" disabled>Procesar documento</button>
+            </div>
+
+            <div class="loading" id="loading">
+                <div class="spinner"></div>
+                <p>Procesando documento...</p>
+            </div>
+
+            <div class="result" id="result">
+                <h3>Resultado</h3>
+                <div class="stats" id="stats"></div>
+                <div class="text-output" id="textOutput"></div>
+            </div>
         </div>
 
-        <div style="text-align: center;">
-            <button class="btn" id="processBtn" disabled>Procesar documento</button>
-        </div>
+        <!-- API Docs Tab -->
+        <div id="docs-tab" class="tab-content">
+            <div class="docs-section">
+                <h2>API REST - Documentacion</h2>
+                <p style="color: #aaa; margin-bottom: 15px;">
+                    Base URL: <code style="background: #0a0a15; padding: 3px 8px; border-radius: 4px;">http://localhost:8505</code>
+                </p>
+            </div>
 
-        <div class="loading" id="loading">
-            <div class="spinner"></div>
-            <p>Procesando documento...</p>
-        </div>
+            <!-- /process endpoint -->
+            <div class="docs-section">
+                <h2>Endpoint Principal: /process</h2>
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <span class="method post">POST</span>
+                        <span class="endpoint-path">/process</span>
+                    </div>
+                    <p class="endpoint-desc">Procesa un documento PDF o imagen y extrae el texto con OCR.</p>
 
-        <div class="result" id="result">
-            <h3>Resultado</h3>
-            <div class="stats" id="stats"></div>
-            <div class="text-output" id="textOutput"></div>
+                    <h3>Parametros (form-data)</h3>
+                    <table class="param-table">
+                        <tr><th>Parametro</th><th>Tipo</th><th>Requerido</th><th>Descripcion</th></tr>
+                        <tr>
+                            <td><span class="param-name">file</span></td>
+                            <td><span class="param-type">File</span></td>
+                            <td>Si</td>
+                            <td>Archivo PDF, PNG, JPG, JPEG, TIFF o BMP</td>
+                        </tr>
+                        <tr>
+                            <td><span class="param-name">format</span></td>
+                            <td><span class="param-type">String</span></td>
+                            <td>No</td>
+                            <td><code>layout</code> (default) - Preserva estructura espacial y tablas<br>
+                                <code>normal</code> - Texto plano sin formato</td>
+                        </tr>
+                    </table>
+
+                    <h3>Ejemplo cURL</h3>
+                    <div class="code-block">curl -X POST http://localhost:8505/process \\
+  -F "file=@factura.pdf" \\
+  -F "format=layout"</div>
+
+                    <h3>Respuesta exitosa</h3>
+                    <div class="code-block response-example">{
+  "success": true,
+  "format": "layout",
+  "text": "... texto extraido ...",
+  "stats": {
+    "avg_confidence": 0.967,
+    "processing_time": 12.5,
+    "total_blocks": 157,
+    "total_pages": 1
+  },
+  "timestamp": 1733664000.123
+}</div>
+
+                    <h3>Respuesta de error</h3>
+                    <div class="code-block response-example">{
+  "success": false,
+  "error": "Descripcion del error"
+}</div>
+                </div>
+            </div>
+
+            <!-- /health endpoint -->
+            <div class="docs-section">
+                <h2>Endpoints de Estado</h2>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <span class="method get">GET</span>
+                        <span class="endpoint-path">/health</span>
+                    </div>
+                    <p class="endpoint-desc">Verifica el estado del servidor y los modelos OCR.</p>
+
+                    <h3>Ejemplo</h3>
+                    <div class="code-block">curl http://localhost:8505/health</div>
+
+                    <h3>Respuesta</h3>
+                    <div class="code-block response-example">{
+  "status": "healthy",
+  "ocr_ready": true,
+  "preprocessor_ready": true,
+  "opencv_config": { ... },
+  "rotation_config": { ... }
+}</div>
+                </div>
+
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <span class="method get">GET</span>
+                        <span class="endpoint-path">/stats</span>
+                    </div>
+                    <p class="endpoint-desc">Obtiene estadisticas de uso del servidor.</p>
+
+                    <h3>Ejemplo</h3>
+                    <div class="code-block">curl http://localhost:8505/stats</div>
+
+                    <h3>Respuesta</h3>
+                    <div class="code-block response-example">{
+  "total_requests": 150,
+  "successful_requests": 145,
+  "failed_requests": 5,
+  "uptime_seconds": 3600
+}</div>
+                </div>
+            </div>
+
+            <!-- /ocr endpoint -->
+            <div class="docs-section">
+                <h2>Endpoint n8n: /ocr</h2>
+                <div class="endpoint">
+                    <div class="endpoint-header">
+                        <span class="method post">POST</span>
+                        <span class="endpoint-path">/ocr</span>
+                    </div>
+                    <p class="endpoint-desc">Endpoint compatible con n8n. Procesa archivos desde el sistema de archivos del servidor.</p>
+
+                    <h3>Parametros (JSON body)</h3>
+                    <table class="param-table">
+                        <tr><th>Parametro</th><th>Tipo</th><th>Descripcion</th></tr>
+                        <tr>
+                            <td><span class="param-name">filename</span></td>
+                            <td><span class="param-type">String</span></td>
+                            <td>Ruta al archivo en /home/n8n/in/</td>
+                        </tr>
+                        <tr>
+                            <td><span class="param-name">n8nHomeDir</span></td>
+                            <td><span class="param-type">String</span></td>
+                            <td>Directorio base (default: /home/n8n)</td>
+                        </tr>
+                    </table>
+
+                    <h3>Ejemplo</h3>
+                    <div class="code-block">curl -X POST http://localhost:8505/ocr \\
+  -H "Content-Type: application/json" \\
+  -d '{"filename": "/home/n8n/in/documento.pdf"}'</div>
+                </div>
+            </div>
+
+            <!-- Formatos -->
+            <div class="docs-section">
+                <h2>Formatos de Salida</h2>
+
+                <h3>Layout (recomendado para facturas)</h3>
+                <p style="color: #aaa; margin: 10px 0;">Preserva la estructura espacial del documento. Detecta y formatea tablas automaticamente.</p>
+                <div class="code-block">|CODIGO    |DESCRIPCION      |CANTIDAD |PRECIO  |IMPORTE |
++----------+-----------------+---------+--------+--------+
+|A001      |Producto ejemplo |2        |15,50   |31,00   |
+|A002      |Otro producto    |1        |25,00   |25,00   |</div>
+
+                <h3>Normal</h3>
+                <p style="color: #aaa; margin: 10px 0;">Texto plano, cada linea separada por salto de linea.</p>
+                <div class="code-block">FACTURA
+Fecha: 08/12/2025
+Cliente: Empresa SA
+Total: 56,00 EUR</div>
+            </div>
+
+            <!-- Integracion -->
+            <div class="docs-section">
+                <h2>Ejemplos de Integracion</h2>
+
+                <h3>Python</h3>
+                <div class="code-block">import requests
+
+url = "http://localhost:8505/process"
+files = {"file": open("factura.pdf", "rb")}
+data = {"format": "layout"}
+
+response = requests.post(url, files=files, data=data)
+result = response.json()
+
+if result["success"]:
+    print(f"Confianza: {result['stats']['avg_confidence']}")
+    print(result["text"])</div>
+
+                <h3>JavaScript (fetch)</h3>
+                <div class="code-block">const formData = new FormData();
+formData.append('file', fileInput.files[0]);
+formData.append('format', 'layout');
+
+const response = await fetch('http://localhost:8505/process', {
+    method: 'POST',
+    body: formData
+});
+const result = await response.json();
+console.log(result.text);</div>
+
+                <h3>n8n (HTTP Request Node)</h3>
+                <div class="code-block">Method: POST
+URL: http://paddleocr:8503/process
+Body Type: Form-Data
+  - file: {{ $binary.data }}
+  - format: layout</div>
+            </div>
+
+            <!-- Limites -->
+            <div class="docs-section">
+                <h2>Limites y Recomendaciones</h2>
+                <table class="param-table">
+                    <tr><th>Parametro</th><th>Valor</th></tr>
+                    <tr><td>Tamaño maximo archivo</td><td>50 MB</td></tr>
+                    <tr><td>Formatos soportados</td><td>PDF, PNG, JPG, JPEG, TIFF, BMP</td></tr>
+                    <tr><td>Tiempo tipico por pagina</td><td>5-20 segundos</td></tr>
+                    <tr><td>Confianza promedio</td><td>92-97%</td></tr>
+                </table>
+            </div>
         </div>
     </div>
 
     <script>
+        function showTab(tabName) {
+            document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
+            document.querySelectorAll('.tab-content').forEach(c => c.classList.remove('active'));
+            document.querySelector(`[onclick="showTab('${tabName}')"]`).classList.add('active');
+            document.getElementById(tabName + '-tab').classList.add('active');
+        }
+
         const dropZone = document.getElementById('dropZone');
         const fileInput = document.getElementById('fileInput');
         const processBtn = document.getElementById('processBtn');
