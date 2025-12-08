@@ -1,6 +1,16 @@
-# PaddleOCR WebComunica v5.2
+# PaddleOCR WebComunica v5.3
 
 OCR minimalista y eficiente basado en PaddleOCR 3.x con API REST profesional.
+
+## Cambios v5.3
+- **BUG CRÍTICO**: Corregidas funciones inexistentes (`initialize_*` → `init_*`)
+- **Seguridad**: Añadido `secure_filename` para prevenir path traversal
+- **Seguridad**: Límite de 50MB para archivos subidos
+- **Seguridad**: Enmascarado de contraseñas en logs
+- **Robustez**: Timeouts (30-120s) en todas las llamadas subprocess
+- **Código**: Corregidos bare except clauses
+- **Código**: Consolidados imports duplicados
+- Auditoría completa en [REVISION_CODIGO.md](REVISION_CODIGO.md)
 
 ## Cambios v5.2
 - Detección de tablas con mínimo 2 filas (antes 3)

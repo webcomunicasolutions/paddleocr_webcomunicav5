@@ -17,6 +17,7 @@ import cv2
 import numpy as np
 from pathlib import Path
 from flask import Flask, request, jsonify
+from werkzeug.utils import secure_filename  # v5.3: Para prevenir path traversal
 
 # Configurar logging ANTES de cualquier otra cosa
 logging.basicConfig(
@@ -39,17 +40,16 @@ os.environ['HOME'] = '/home/n8n'
 
 logger.info("[DEBUG] Variables de entorno configuradas")
 
+# v5.3: Verificar imports (ya importados arriba, solo logging de confirmación)
 try:
-    import cv2
-    logger.info("[DEBUG] OpenCV importado OK")
+    logger.info(f"[DEBUG] OpenCV version: {cv2.__version__}")
 except Exception as e:
-    logger.error(f"[DEBUG] Error importando OpenCV: {e}")
+    logger.error(f"[DEBUG] Error verificando OpenCV: {e}")
 
 try:
-    import numpy as np
-    logger.info("[DEBUG] NumPy importado OK")
+    logger.info(f"[DEBUG] NumPy version: {np.__version__}")
 except Exception as e:
-    logger.error(f"[DEBUG] Error importando NumPy: {e}")
+    logger.error(f"[DEBUG] Error verificando NumPy: {e}")
 
 logger.info("[DEBUG] Imports basicos completados")
 
@@ -77,6 +77,8 @@ except Exception as e:
     logger.error(f"[DEBUG] Error importando DocImgOrientationClassification: {e}")
 
 app = Flask(__name__)
+# v5.3: Límite de tamaño de archivo (50MB) para prevenir DoS
+app.config['MAX_CONTENT_LENGTH'] = 50 * 1024 * 1024
 logger.info("[DEBUG] Flask app creada")
 
 # Variables configurables desde ENV
@@ -708,8 +710,9 @@ def fix_deskew(img_path):
     """
     try:
         # Detectar angulo de inclinacion
+        # v5.3: Añadido timeout para evitar bloqueos
         result = subprocess.run(['convert', img_path, '-deskew', '45%', '-format', '%[deskew:angle]', 'info:'],
-                              capture_output=True, text=True)
+                              capture_output=True, text=True, timeout=60)
 
         if result.returncode != 0 or not result.stdout.strip():
             logger.warning("[IMG] [CONVERT] [DESKEW] Error detectando inclinacion")
@@ -724,6 +727,7 @@ def fix_deskew(img_path):
             corrected = False
             if skew_abs > ROTATION_CONFIG['MIN_SKEW_ANGLE']:
                 deskewed_path = img_path.replace('.png', '_deskewed.png')
+                # v5.3: Añadido timeout
                 result = subprocess.run([
                     'convert', img_path,
                     '-background', 'white',
@@ -732,10 +736,10 @@ def fix_deskew(img_path):
                     '-fuzz', '10%',
                     '+repage',
                     deskewed_path
-                ], capture_output=True, text=True)
+                ], capture_output=True, text=True, timeout=60)
 
                 if result.returncode == 0 and os.path.exists(deskewed_path):
-                    subprocess.run(['mv', deskewed_path, img_path])
+                    subprocess.run(['mv', deskewed_path, img_path], timeout=30)
                     corrected = True
                 else:
                     logger.warning("[IMG] [CONVERT] [DESKEW] Error aplicando correccion")
@@ -770,32 +774,35 @@ def init_pdf_prep(n8nHomeDir, base_name, ext):
                 result = subprocess.run(['jq', '-r', '.empresaNif // ""', json_file], capture_output=True, text=True)
                 if result.returncode == 0:
                     empresaNif = result.stdout.strip()
-                    logger.info(f"[JSON] empresaNif: {empresaNif}")
+                    # v5.3: No loguear contraseña por seguridad
+                    logger.info(f"[JSON] empresaNif: {'*' * len(empresaNif) if empresaNif else 'N/A'}")
             except Exception as e:
                 logger.warning(f"[JSON] Error leyendo JSON: {e}")
 
         # Verificar si esta protegido
-        result = subprocess.run(['pdfinfo', in_file], capture_output=True, text=True)
+        # v5.3: Añadido timeout
+        result = subprocess.run(['pdfinfo', in_file], capture_output=True, text=True, timeout=30)
 
         if 'Incorrect password' in result.stderr and empresaNif:
             logger.info("[PDF] PDF protegido, desprotegiendo...")
 
             # Desproteger con empresaNif
             tmp_file = f"{in_file}_unlocked.pdf"
+            # v5.3: Añadido timeout
             result = subprocess.run([
                 'qpdf', '--password=' + empresaNif, '--decrypt',
                 in_file, tmp_file
-            ], capture_output=True, text=True)
+            ], capture_output=True, text=True, timeout=60)
 
             if result.returncode == 0 and os.path.exists(tmp_file):
                 # Mover archivo desprotegido
-                subprocess.run(['mv', tmp_file, in_file])
+                subprocess.run(['mv', tmp_file, in_file], timeout=30)
                 logger.info("[PDF] PDF desprotegido correctamente")
             else:
                 logger.warning("[PDF] No se pudo desproteger PDF")
 
         # Copiar a directorio OCR
-        subprocess.run(['cp', in_file, out_pdf])
+        subprocess.run(['cp', in_file, out_pdf], timeout=30)
         logger.info(f"[PDF] PDF copiado a {out_pdf}")
 
         return True
@@ -836,11 +843,12 @@ def init_img_prep(n8nHomeDir, base_name, ext):
 
         # 1.3. Crear PDF preocr
         if os.path.exists(ocv_img):
-            result = subprocess.run(['convert', ocv_img, '-quality', '85', '-sampling-factor', '2x2,1x1,1x1', '-interlace', 'JPEG', out_pdf], capture_output=True, text=True)
+            # v5.3: Añadido timeout
+            result = subprocess.run(['convert', ocv_img, '-quality', '85', '-sampling-factor', '2x2,1x1,1x1', '-interlace', 'JPEG', out_pdf], capture_output=True, text=True, timeout=60)
 
             if result.returncode == 0:
                 # Mostrar resumen
-                final_size_result = subprocess.run(['identify', '-format', '%wx%h', ocv_img], capture_output=True, text=True)
+                final_size_result = subprocess.run(['identify', '-format', '%wx%h', ocv_img], capture_output=True, text=True, timeout=30)
 
                 if final_size_result.returncode == 0:
                     final_size = final_size_result.stdout.strip()
@@ -850,7 +858,8 @@ def init_img_prep(n8nHomeDir, base_name, ext):
 
         # 1.3.1. Fallback: crear PDF con imagen original si no existe
         if not os.path.exists(out_pdf):
-            result = subprocess.run(['convert', in_file, '-quality', '85', '-sampling-factor', '2x2,1x1,1x1', '-interlace', 'JPEG', out_pdf], capture_output=True, text=True)
+            # v5.3: Añadido timeout
+            result = subprocess.run(['convert', in_file, '-quality', '85', '-sampling-factor', '2x2,1x1,1x1', '-interlace', 'JPEG', out_pdf], capture_output=True, text=True, timeout=60)
 
             if result.returncode == 0:
                 logger.info("[IMG] [PDF] PDF creado con imagen original")
@@ -880,9 +889,10 @@ def det_scanned(pdf_path, page_num=1):
         import fitz  # PyMuPDF
 
         # 1. Verificar fuentes embebidas
+        # v5.3: Añadido timeout
         result = subprocess.run(
-            ['pdffonts', '-f', str(page_num), '-l', str(page_num), pdf_path], 
-            capture_output=True, text=True
+            ['pdffonts', '-f', str(page_num), '-l', str(page_num), pdf_path],
+            capture_output=True, text=True, timeout=30
         )
 
         if result.returncode != 0:
@@ -1186,13 +1196,14 @@ def create_spdf(n8nHomeDir, base_name, in_pdf, spdf, page_num):
     if page_scanned:
 
         # Extraer a imagen con ocr_work_dpi
-        subprocess.run(['pdftoppm', '-png', '-f', '1', '-l', '1', '-r', str(ocr_work_dpi), in_pdf, in_pdf.replace('.pdf', '')], check=True)
+        # v5.3: Añadido timeout
+        subprocess.run(['pdftoppm', '-png', '-f', '1', '-l', '1', '-r', str(ocr_work_dpi), in_pdf, in_pdf.replace('.pdf', '')], check=True, timeout=120)
 
         # Detectar y corregir orientacion
         in_png = f"{n8nHomeDir}/ocr/{base_name}_2.2.p-{page_num}.png"
         out_png = f"{n8nHomeDir}/ocr/{base_name}_2.3.orientation.p-{page_num}.png"
-        subprocess.run(['mv', in_pdf.replace('.pdf', '-1.png'), in_png], check=True)
-        subprocess.run(['cp', in_png, out_png], check=True)
+        subprocess.run(['mv', in_pdf.replace('.pdf', '-1.png'), in_png], check=True, timeout=30)
+        subprocess.run(['cp', in_png, out_png], check=True, timeout=30)
         logger.info(f"[ORIENTATION] Detectando orientacion pagina {page_num}...")
         success, degrees, conf, rotated = fix_orientation(out_png, doc_preprocessor)
 
@@ -1203,7 +1214,7 @@ def create_spdf(n8nHomeDir, base_name, in_pdf, spdf, page_num):
         # Detectar y corregir inclinacion
         in_png = f"{n8nHomeDir}/ocr/{base_name}_2.3.orientation.p-{page_num}.png"
         out_png = f"{n8nHomeDir}/ocr/{base_name}_2.4.deskew.p-{page_num}.png"
-        subprocess.run(['cp', in_png, out_png], check=True)
+        subprocess.run(['cp', in_png, out_png], check=True, timeout=30)
         logger.info(f"[DESKEW] Detectando inclinacion pagina {page_num}...")
         success, angle, corrected = fix_deskew(out_png)
 
@@ -1293,7 +1304,8 @@ def create_spdf(n8nHomeDir, base_name, in_pdf, spdf, page_num):
  
             # Para vectoriales, descartar text_lines del OCR y leer el PDF completo ya compuesto
             try:
-                result = subprocess.run(['pdftotext', '-raw', spdf, '-'], capture_output=True, text=True)
+                # v5.3: Añadido timeout
+                result = subprocess.run(['pdftotext', '-raw', spdf, '-'], capture_output=True, text=True, timeout=60)
                 if result.returncode == 0 and result.stdout.strip():
                     # Reemplazar completamente text_lines con el texto del PDF compuesto
                     text_lines = result.stdout.splitlines()
@@ -1307,7 +1319,7 @@ def create_spdf(n8nHomeDir, base_name, in_pdf, spdf, page_num):
     except Exception as e:
         logger.error(f"[CREATE_SPDF] Error creando PDF final: {e}")
         # Fallback: copiar PDF original
-        subprocess.run(['cp', in_pdf, spdf], check=True)
+        subprocess.run(['cp', in_pdf, spdf], check=True, timeout=30)
         logger.info(f"[CREATE_SPDF] PDF original copiado como fallback: {spdf}")
 
     page_time = time.time() - page_start_time
@@ -1341,19 +1353,21 @@ def proc_mpdf_ocr(n8nHomeDir, base_name, ext):
             return False, "File not found", None
 
         # Verificar modelos inicializados
+        # v5.3: Corregido bug crítico - funciones eran initialize_* (no existían)
         if not doc_preprocessor:
             logger.info("[PROC_PDF_OCR] Inicializando modelo de orientacion...")
-            if not initialize_docpreprocessor():
+            if not init_docpreprocessor():
                 logger.warning("[PROC_PDF_OCR] Modelo de orientacion no disponible, continuando sin rotacion")
 
         if not ocr_instance:
             logger.info("[PROC_PDF_OCR] Inicializando PaddleOCR...")
-            if not initialize_ocr():
+            if not init_ocr():
                 logger.error("[PROC_PDF_OCR] No se pudo inicializar PaddleOCR")
                 return False, "OCR initialization failed", None
 
         # Obtener numero de paginas
-        result = subprocess.run(['pdfinfo', in_pdf], capture_output=True, text=True)
+        # v5.3: Añadido timeout
+        result = subprocess.run(['pdfinfo', in_pdf], capture_output=True, text=True, timeout=30)
         pages = 1
         for line in result.stdout.splitlines():
             if "Pages:" in line:
@@ -1361,7 +1375,8 @@ def proc_mpdf_ocr(n8nHomeDir, base_name, ext):
                 break
 
         # Extraer paginas individuales en /ocr
-        subprocess.run(['pdfseparate', in_pdf, f'{n8nHomeDir}/ocr/{base_name}_2.1.p-%d.pdf'], check=True)
+        # v5.3: Añadido timeout
+        subprocess.run(['pdfseparate', in_pdf, f'{n8nHomeDir}/ocr/{base_name}_2.1.p-%d.pdf'], check=True, timeout=120)
         logger.info(f"[PROC_PDF_OCR] Paginas ({pages}): {base_name}_2.1.p-1.pdf - {base_name}_2.1.p-{pages}.pdf")
 
         # Procesar cada pagina individualmente
@@ -1396,12 +1411,13 @@ def proc_mpdf_ocr(n8nHomeDir, base_name, ext):
 
         # Combinar todas las paginas procesadas
         logger.info(f"[PROC_PDF_OCR] Combinando {len(mpdf)} paginas procesadas...")
-        subprocess.run(['pdfunite'] + mpdf + [out_pdf], check=True)
+        # v5.3: Añadido timeout
+        subprocess.run(['pdfunite'] + mpdf + [out_pdf], check=True, timeout=120)
         out_size_kb = os.path.getsize(out_pdf) / 1024
         logger.info(f"[PROC_PDF_OCR] PDF combinado creado ({out_size_kb:.0f}kB): {out_pdf}")
 
         # Generar en ubicacion final
-        subprocess.run(['cp', out_pdf, final_pdf], check=True)
+        subprocess.run(['cp', out_pdf, final_pdf], check=True, timeout=30)
         final_size_kb = os.path.getsize(final_pdf) / 1024
         logger.info(f"[PROC_PDF_OCR] PDF final creado ({final_size_kb:.0f}kB): {final_pdf}")
 
@@ -1554,7 +1570,8 @@ def compose_pdf_ocr(base_source, ocr_data, out_spdf, is_scanned, out_dpi=72):
 
             # 1. Crear PDF base optimizado con ImageMagick (como _2.0.preocr.pdf)
             pdf_base = img_scaled.replace('_2.5.scaled.p-', '_2.6.p-').replace('.jpg', '.pdf')
-            result = subprocess.run(['convert', img_scaled, '-quality', '85', '-sampling-factor', '2x2,1x1,1x1', '-interlace', 'JPEG', pdf_base], capture_output=True, text=True)
+            # v5.3: Añadido timeout
+            result = subprocess.run(['convert', img_scaled, '-quality', '85', '-sampling-factor', '2x2,1x1,1x1', '-interlace', 'JPEG', pdf_base], capture_output=True, text=True, timeout=60)
             if result.returncode != 0:
                 logger.error(f"[COMPOSE_PDF] Error creando PDF base con ImageMagick: {result.stderr}")
                 raise Exception("Failed to create base PDF with ImageMagick")
@@ -1755,7 +1772,7 @@ def compose_pdf_ocr(base_source, ocr_data, out_spdf, is_scanned, out_dpi=72):
                 logger.info(f"[COMPOSE_PDF] Fallback: PDF simple creado desde imagen")
             else:
                 # Copiar PDF original
-                subprocess.run(['cp', base_source, out_spdf], check=True)
+                subprocess.run(['cp', base_source, out_spdf], check=True, timeout=30)
                 logger.info(f"[COMPOSE_PDF] Fallback: PDF original copiado")
         except Exception as fallback_error:
             logger.error(f"[COMPOSE_PDF] Error en fallback: {fallback_error}")
@@ -2052,7 +2069,7 @@ def ocr():
         try:
             # Test rapido para verificar que OCR responde
             test_result = ocr_instance.predict.__name__
-        except:
+        except Exception:  # v5.3: Corregido bare except
             logger.warning("[OCR] OCR instance no responde, reinicializando...")
             ocr_instance = None
             if not init_ocr():
@@ -2187,7 +2204,9 @@ def process():
 
         # 2. GUARDAR ARCHIVO TEMPORAL
         os.makedirs(f"{n8nHomeDir}/in", exist_ok=True)
-        temp_filename = f"proc_{int(time.time())}_{file.filename}"
+        # v5.3: Usar secure_filename para prevenir path traversal
+        safe_name = secure_filename(file.filename)
+        temp_filename = f"proc_{int(time.time())}_{safe_name}"
         temp_file_path = f"{n8nHomeDir}/in/{temp_filename}"
         file.save(temp_file_path)
 
@@ -2249,9 +2268,9 @@ def process():
                 for f in glob.glob(f"{n8nHomeDir}/ocr/{base}*") + glob.glob(f"{n8nHomeDir}/pdf/{base}*"):
                     try:
                         os.remove(f)
-                    except:
+                    except Exception:  # v5.3: Corregido bare except
                         pass
-            except:
+            except Exception:  # v5.3: Corregido bare except
                 pass
 
 
