@@ -1770,24 +1770,42 @@ def compose_pdf_ocr(base_source, ocr_data, out_spdf, is_scanned, out_dpi=72):
 import re as re_module
 
 # Patrones de headers de tabla (multi-idioma: ES, EN, DE, FR, PT)
+# v4.6 - Expandidos para mejor detección
 TABLE_HEADER_PATTERNS = [
-    r'(?i)(c[oó]digo|code|artikel|art[ií]culo|ref\.?)',
-    r'(?i)(descripci[oó]n|description|bezeichnung|concepto|produto)',
-    r'(?i)(cantidad|quantity|menge|cant\.?|uds\.?|qtd)',
-    r'(?i)(precio|price|preis|pvp|pre[cç]o|unit)',
-    r'(?i)(dto\.?|desc\.?|descuento|discount|rabatt)',
-    r'(?i)(importe|amount|betrag|total|neto|valor)',
-    r'(?i)(iva|vat|mwst|tva|%)',
+    # Código/Referencia
+    r'(?i)(c[oó]digo|code|artikel|art[ií]culo|ref\.?|sku|item|producto)',
+    # Descripción
+    r'(?i)(descripci[oó]n|description|bezeichnung|concepto|produto|d[eé]signation|detalle)',
+    # Cantidad
+    r'(?i)(cantidad|quantity|qty|menge|cant\.?|uds\.?|qtd|unid\.?|pcs|units)',
+    # Precio unitario
+    r'(?i)(precio|price|preis|pvp|pre[cç]o|unit|p\.?\s*unit|tarifa|rate)',
+    # Descuento
+    r'(?i)(dto\.?|desc\.?|descuento|discount|rabatt|remise|dcto)',
+    # Importe/Total línea
+    r'(?i)(importe|amount|betrag|total|neto|valor|montant|subtotal|line\s*total)',
+    # IVA/Impuestos
+    r'(?i)(iva|vat|mwst|tva|tax|impuesto|%)',
+    # Albarán/Pedido (común en facturas españolas)
+    r'(?i)(alb\.?|ped\.?|albar[aá]n|pedido|order|n[uú]mero)',
+    # Base imponible
+    r'(?i)(base|base\s*imp\.?|taxable)',
 ]
 
-PRICE_PATTERN = re_module.compile(r'\d+[,\.]\d{2}')
+# Patrón de precios - detecta formatos europeos y americanos
+PRICE_PATTERN = re_module.compile(r'\d{1,3}(?:[.,]\d{3})*[,\.]\d{2}|\d+[,\.]\d{2}')
 
+# Patrones de fin de tabla - detecta secciones de totales/pie
 END_TABLE_PATTERNS = [
-    r'(?i)(forma\s*de\s*pago|payment|zahlung|vencimiento)',
-    r'(?i)(base\s*imponible|subtotal|zwischensumme)',
-    r'(?i)(iva\s*\d+|%\s*iva|vat|mwst)',
-    r'(?i)(total\s*factura|invoice\s*total|gesamtbetrag)',
-    r'(?i)(iban|banco|bank)',
+    r'(?i)(forma\s*de\s*pago|payment|zahlung|vencimiento|paiement|pagamento)',
+    r'(?i)(base\s*imponible|subtotal|zwischensumme|sous-total|imponibile)',
+    r'(?i)(iva\s*\d+|%\s*iva|vat\s*\d|mwst|tva)',
+    r'(?i)(total\s*factura|invoice\s*total|gesamtbetrag|total\s*general|grand\s*total)',
+    r'(?i)(iban|banco|bank|cuenta|account|ccc|swift|bic)',
+    r'(?i)(garant[ií]a|warranty|garantie)',
+    r'(?i)(observaciones|notes|remarks|bemerkungen)',
+    r'(?i)(recargo|surcharge|zuschlag|equivalencia)',
+    r'(?i)(domicilio|direcci[oó]n|address|adresse)',
 ]
 
 
