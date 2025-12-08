@@ -2,16 +2,18 @@
 
 ## Estado Actual
 
-**Versión:** v4.6 (2272 líneas)
+**Versión:** v5.0 (2272 líneas)
 **Repositorio:** https://github.com/webcomunicasolutions/paddleocr_webcomunicav5
 **Puerto:** 8505
 **Rendimiento:** 2.5x más rápido que versión extendida (12-18s vs 45s)
 
-### Cambios v4.6 (08/12/2025)
-- TABLE_HEADER_PATTERNS: 7 → 9 patrones
-- END_TABLE_PATTERNS: 5 → 9 patrones
-- Soporte multi-idioma expandido (ES, EN, DE, FR, PT)
-- Detección mejorada de tablas en facturas escaneadas
+### Cambios v5.0 (08/12/2025)
+- Código base minimalista de Paco (1905 líneas)
+- API REST con endpoints /process, /stats, /health
+- Formato layout con detección de tablas
+- TABLE_HEADER_PATTERNS: 9 patrones multi-idioma (ES, EN, DE, FR, PT)
+- END_TABLE_PATTERNS: 9 patrones para fin de tabla
+- Formateo de tablas con pipes |col1|col2|
 
 ## Recomendaciones de Agentes Especializados
 

@@ -1770,7 +1770,7 @@ def compose_pdf_ocr(base_source, ocr_data, out_spdf, is_scanned, out_dpi=72):
 import re as re_module
 
 # Patrones de headers de tabla (multi-idioma: ES, EN, DE, FR, PT)
-# v4.6 - Expandidos para mejor detección
+# v5.0 - Expandidos para mejor detección
 TABLE_HEADER_PATTERNS = [
     # Código/Referencia
     r'(?i)(c[oó]digo|code|artikel|art[ií]culo|ref\.?|sku|item|producto)',
