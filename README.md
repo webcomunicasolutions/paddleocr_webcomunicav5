@@ -1,6 +1,11 @@
-# PaddleOCR WebComunica v5.4
+# PaddleOCR WebComunica v5.5
 
 OCR minimalista y eficiente basado en PaddleOCR 3.x con API REST profesional.
+
+## Cambios v5.5
+- **Thread-Safety**: `threading.Lock()` protege `ocr_instance.predict()` para peticiones concurrentes
+- **Concurrencia**: Evita race conditions y errores `std::exception` en escenarios de alta carga
+- **Robustez**: Reinicialización del modelo OCR también protegida por lock
 
 ## Cambios v5.4
 - **Bug Fix**: os.getenv sin default corregido

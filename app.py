@@ -13,6 +13,7 @@ import logging
 import time
 import math
 import tempfile
+import threading  # v5.5: Thread-safety para ocr_instance
 import cv2
 import numpy as np
 from pathlib import Path
@@ -124,6 +125,8 @@ OCR_CONFIG = {
 doc_preprocessor = None
 ocr_instance = None
 ocr_initialized = False
+# v5.5: Lock para thread-safety en llamadas OCR concurrentes
+ocr_lock = threading.Lock()
 ocr_work_dpi = OCR_CONFIG['ocr_work_dpi']
 ocr_out_dpi = OCR_CONFIG['ocr_out_dpi']
 
@@ -1233,12 +1236,15 @@ def create_spdf(n8nHomeDir, base_name, in_pdf, spdf, page_num):
     ocr_start = time.time()
 
     # Reintentos para OCR
+    # v5.5: Usar lock para thread-safety en peticiones concurrentes
     page_ocr_result = None
     max_attempts = 5
     consecutive_std_errors = 0
     for attempt in range(1, max_attempts + 1):
         try:
-            page_ocr_result = ocr_instance.predict(out_png)
+            # v5.5: Lock protege llamada a predict() para evitar race conditions
+            with ocr_lock:
+                page_ocr_result = ocr_instance.predict(out_png)
             ocr_time = time.time() - ocr_start
             if page_ocr_result and len(page_ocr_result) > 0:
                 texts = page_ocr_result[0].get('rec_texts', [])
@@ -1255,31 +1261,32 @@ def create_spdf(n8nHomeDir, base_name, in_pdf, spdf, page_num):
         except Exception as e:
             error_msg = str(e)
             logger.error(f"[OCR] Error en pagina {page_num} (intento {attempt}): {error_msg}")
-        
+
             # Detectar si es std::exception
             if "std::exception" in error_msg:
                 consecutive_std_errors += 1
-            
+
                 # Al segundo error consecutivo, reinicializar
                 if consecutive_std_errors >= 2:
                     logger.warning("[OCR] Detectados 2 errores std::exception consecutivos - reinicializando modelo OCR...")
-                
-                    # Liberar memoria y reinicializar
-                    ocr_instance = None
-                    ocr_initialized = False
-                
-                    # Forzar recolección de basura
-                    import gc
-                    gc.collect()
-                
-                    # Reinicializar
-                    if init_ocr():
-                        logger.info("[OCR] Modelo OCR reinicializado exitosamente")
-                        consecutive_std_errors = 0  # Resetear contador
-                    else:
-                        logger.error("[OCR] No se pudo reinicializar OCR")
-                        raise Exception("OCR model corrupted and cannot reinitialize")
-        
+
+                    # v5.5: Lock protege reinicialización del modelo
+                    with ocr_lock:
+                        ocr_instance = None
+                        ocr_initialized = False
+
+                        # Forzar recolección de basura
+                        import gc
+                        gc.collect()
+
+                        # Reinicializar
+                        if init_ocr():
+                            logger.info("[OCR] Modelo OCR reinicializado exitosamente")
+                            consecutive_std_errors = 0  # Resetear contador
+                        else:
+                            logger.error("[OCR] No se pudo reinicializar OCR")
+                            raise Exception("OCR model corrupted and cannot reinitialize")
+
             # Esperar antes del siguiente intento
             if attempt < max_attempts:
                 logger.info(f"[OCR] Esperando 1 segundo antes del siguiente intento...")

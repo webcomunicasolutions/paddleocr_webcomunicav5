@@ -2,7 +2,7 @@
 
 ## Estado Actual
 
-**Versión:** v5.4 (estable, producción)
+**Versión:** v5.5 (estable, producción)
 **Repositorio:** https://github.com/webcomunicasolutions/paddleocr_webcomunicav5
 **Puerto:** 8505
 **Rendimiento:** Confianza 0.927 promedio, ~7s por documento
@@ -10,6 +10,12 @@
 ---
 
 ## Cambios Recientes (08/12/2025)
+
+### v5.5 - Thread-Safety para Concurrencia
+- **Thread-Safety:** `threading.Lock()` protege `ocr_instance.predict()`
+- **Concurrencia:** Evita race conditions en peticiones simultáneas
+- **Robustez:** Reinicialización del modelo también protegida por lock
+- Soluciona errores `std::exception` intermitentes en alta carga
 
 ### v5.4 - Bug Fixes y Seguridad
 - **Bug 1:** os.getenv sin default corregido
