@@ -5,38 +5,61 @@
 **Versión:** v5.5 (estable, producción)
 **Repositorio:** https://github.com/webcomunicasolutions/paddleocr_webcomunicav5
 **Puerto:** 8505
-**Rendimiento:** Confianza 0.927 promedio, ~7s por documento
+**Rendimiento:** Confianza 0.927 promedio, ~10s por documento
 
 ---
 
-## Cambios Recientes (08/12/2025)
+## IMPORTANTE: Problema de Concurrencia (LEER PRIMERO)
 
-### v5.5 - Thread-Safety para Concurrencia
-- **Thread-Safety:** `threading.Lock()` protege `ocr_instance.predict()`
-- **Concurrencia:** Evita race conditions en peticiones simultáneas
-- **Robustez:** Reinicialización del modelo también protegida por lock
-- Soluciona errores `std::exception` intermitentes en alta carga
+### El Problema
+PaddleOCR **NO es thread-safe**. Cuando múltiples peticiones llegan simultáneamente, causa:
+```
+RuntimeError: std::exception
+```
 
-### v5.4 - Bug Fixes y Seguridad
-- **Bug 1:** os.getenv sin default corregido
-- **Bug 2:** Context managers para archivos PDF
-- **Bug 3:** Path traversal validación en /ocr
-- **Bug 4:** OCR_CONFIG unificado con init_ocr()
-- Verificado con 10 pruebas: 10/10 OK
+**Es un bug conocido de PaddleOCR**, no de nuestro código:
+- [Issue #16238](https://github.com/PaddlePaddle/PaddleOCR/issues/16238)
+- [Issue #11605](https://github.com/PaddlePaddle/PaddleOCR/issues/11605)
 
-### Investigación PP-OCRv5 (DESCARTADA)
-- Creado proyecto v6 experimental en `/paddleocr_v6_ppocrv5/`
-- **Resultado:** PP-OCRv5 es PEOR que PP-OCRv3
-  - Confianza: -3.4%
-  - Tiempo: +100% (el doble)
-- **Decisión:** Mantener PP-OCRv3
+### La Solución (v5.5)
+Usamos `threading.Semaphore(1)` para serializar peticiones OCR:
+
+```python
+# En app.py línea ~130
+ocr_semaphore = threading.Semaphore(1)
+
+# En app.py línea ~1248
+with ocr_semaphore:
+    page_ocr_result = ocr_instance.predict(out_png)
+```
+
+**Esto garantiza que solo 1 petición OCR se ejecuta a la vez.**
+
+### Resultado
+- **10/10 peticiones simultáneas exitosas**
+- **0 errores std::exception**
+- **Throughput**: ~1 documento cada 10-15 segundos
+
+### Si necesitas más throughput
+Ver **MEJORAS_FUTURAS.md** para opciones de escalado:
+1. Múltiples contenedores + Nginx (recomendado)
+2. PaddleServing oficial (alta carga)
 
 ---
 
-## Configuración Actual (Óptima)
+## Cambios v5.5 (08/12/2025)
+
+- **Semáforo**: `threading.Semaphore(1)` serializa peticiones OCR
+- **UUID**: Archivos temporales con UUID evitan colisiones
+- **Documentación**: MEJORAS_FUTURAS.md con opciones de escalado
+- **Probado**: 10/10 peticiones simultáneas OK
+
+---
+
+## Configuración Actual (NO CAMBIAR)
 
 ```yaml
-# Modelos (NO CAMBIAR - PP-OCRv3 es mejor para nuestros documentos)
+# Modelos - PP-OCRv3 es MEJOR que PP-OCRv5 para nuestros documentos
 OCR_VERSION: PP-OCRv3
 OCR_TEXT_DETECTION_MODEL_NAME: PP-OCRv3_mobile_det
 OCR_TEXT_RECOGNITION_MODEL_NAME: latin_PP-OCRv3_mobile_rec
@@ -46,19 +69,16 @@ OCR_TEXT_DET_THRESH: 0.25
 OCR_TEXT_DET_BOX_THRESH: 0.4
 OCR_TEXT_DET_UNCLIP_RATIO: 2.0
 OCR_TEXT_DET_LIMIT_SIDE_LEN: 960
-OCR_TEXT_DET_LIMIT_TYPE: min
 ```
 
 ---
 
-## Métricas de Referencia v5.4
+## NO HACER (Errores ya cometidos)
 
-| Archivo | Confianza | Tiempo | Bloques |
-|---------|-----------|--------|---------|
-| ticket.pdf | 0.905 | 4.15s | 43 |
-| escaneadas 400_4.pdf | 0.969 | 18.74s | 158 |
-| Factura noviembre.pdf | 0.989 | 3.41s | 83 |
-| **Promedio (10 archivos)** | **0.927** | **6.98s** | - |
+1. **NO quitar el semáforo** - Causa std::exception inmediatamente
+2. **NO usar threading.Lock()** - No es suficiente, necesita Semaphore
+3. **NO actualizar a PP-OCRv5** - Ya probado, es -3.4% peor
+4. **NO crear pool de instancias** - Complejo, mejor múltiples contenedores
 
 ---
 
@@ -66,19 +86,11 @@ OCR_TEXT_DET_LIMIT_TYPE: min
 
 | Archivo | Propósito |
 |---------|-----------|
-| README.md | Documentación principal |
-| MEJORAS.md | Historial de optimizaciones |
-| REVISION_CODIGO.md | Auditoría de código |
+| README.md | Documentación principal + sección concurrencia |
+| MEJORAS_FUTURAS.md | **Opciones de escalado para el futuro** |
 | LECCIONES_APRENDIDAS.md | Errores y aciertos para no repetir |
+| REVISION_CODIGO.md | Auditoría de código |
 | EASYPANEL.md | Guía de despliegue |
-
----
-
-## NO HACER
-
-1. **NO actualizar a PP-OCRv5** - Ya probado, es peor
-2. **NO cambiar row_tolerance** de 0.7 - Causa texto corrupto
-3. **NO usar parámetros muy bajos** (OCR_TEXT_DET_THRESH < 0.2) - Detecta ruido
 
 ---
 
@@ -92,6 +104,14 @@ curl http://localhost:8505/health
 curl -X POST http://localhost:8505/process \
   -F "file=@factura.pdf" -F "format=layout"
 
+# Prueba de estrés (10 peticiones)
+for i in {1..10}; do
+  curl -s -X POST http://localhost:8505/process \
+    -F "file=@/tmp/ticket.pdf" -F "format=layout" \
+    -o /tmp/test_$i.json &
+done
+wait
+
 # Rebuild
 cd "/mnt/c/PROYECTOS CLAUDE/paddleocr/paddleocr_v5_paco_base"
 docker-compose down && docker-compose build && docker-compose up -d
@@ -102,14 +122,23 @@ docker-compose logs -f
 
 ---
 
-## Proyectos Relacionados
+## Métricas de Referencia
 
-| Proyecto | Puerto | Estado | Notas |
-|----------|--------|--------|-------|
-| paddleocr_v5_paco_base | 8505 | **PRODUCCIÓN** | Versión estable |
-| paddleocr_v6_ppocrv5 | 8506 | DETENIDO | Experimento fallido PP-OCRv5 |
-| paddleocr_experimental_layout | 8503 | - | Versión anterior |
+| Archivo | Confianza | Tiempo |
+|---------|-----------|--------|
+| ticket.pdf | 0.905 | ~11s |
+| Factura noviembre.pdf | 0.989 | ~10s |
+| escaneadas 400_4.pdf | 0.969 | ~19s |
 
 ---
 
-*Última actualización: 08/12/2025 - v5.4*
+## Proyectos Relacionados
+
+| Proyecto | Puerto | Estado |
+|----------|--------|--------|
+| paddleocr_v5_paco_base | 8505 | **PRODUCCIÓN** |
+| paddleocr_v6_ppocrv5 | 8506 | DESCARTADO (PP-OCRv5 peor) |
+
+---
+
+*Última actualización: 08/12/2025 - v5.5*
