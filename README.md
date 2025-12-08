@@ -221,6 +221,8 @@ paddlex --serve --pipeline OCR --port 8080
 | Medio (10-50 req/min) | Múltiples contenedores + balanceador | 4GB x N |
 | Alto (>100 req/min) | PaddleServing | Variable |
 
+**Ver [MEJORAS_FUTURAS.md](MEJORAS_FUTURAS.md)** para guías detalladas de implementación.
+
 ## Requisitos
 
 - Docker con soporte AVX/AVX2
