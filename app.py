@@ -106,15 +106,16 @@ ROTATION_CONFIG = {
 }
 
 # Configuracion OCR desde variables de entorno
+# v5.4: Valores unificados con init_ocr() para evitar inconsistencias
 OCR_CONFIG = {
     'ocr_work_dpi': int(os.getenv('OCR_WORK_DPI', '144')),
     'ocr_out_dpi': int(os.getenv('OCR_OUT_DPI', '72')),
-    'text_det_thresh': float(os.getenv('OCR_TEXT_DET_THRESH', '0.1')),
+    'text_det_thresh': float(os.getenv('OCR_TEXT_DET_THRESH', '0.25')),
     'text_det_box_thresh': float(os.getenv('OCR_TEXT_DET_BOX_THRESH', '0.4')),
-    'text_det_unclip_ratio': float(os.getenv('OCR_TEXT_DET_UNCLIP_RATIO', '1.5')),
+    'text_det_unclip_ratio': float(os.getenv('OCR_TEXT_DET_UNCLIP_RATIO', '2.0')),
     'text_rec_score_thresh': float(os.getenv('OCR_TEXT_REC_SCORE_THRESH', '0.2')),
-    'text_det_limit_side_len': int(os.getenv('OCR_TEXT_DET_LIMIT_SIDE_LEN', '4800')),
-    'text_det_limit_type': os.getenv('OCR_TEXT_DET_LIMIT_TYPE', 'max'),
+    'text_det_limit_side_len': int(os.getenv('OCR_TEXT_DET_LIMIT_SIDE_LEN', '960')),
+    'text_det_limit_type': os.getenv('OCR_TEXT_DET_LIMIT_TYPE', 'min'),
     'text_recognition_batch_size': int(os.getenv('OCR_TEXT_RECOGNITION_BATCH_SIZE', '6')),
     'textline_orientation_batch_size': int(os.getenv('OCR_TEXTLINE_ORIENTATION_BATCH_SIZE', '1'))
 }
@@ -1580,86 +1581,84 @@ def compose_pdf_ocr(base_source, ocr_data, out_spdf, is_scanned, out_dpi=72):
 
             # 2. Leer PDF base optimizado
             import PyPDF2
-            pdf_file = open(pdf_base, 'rb')
-            pdf_reader = PyPDF2.PdfReader(pdf_file)
-            original_page = pdf_reader.pages[0]
+            # v5.4: Usar context manager para asegurar cierre del archivo
+            with open(pdf_base, 'rb') as pdf_file:
+                pdf_reader = PyPDF2.PdfReader(pdf_file)
+                original_page = pdf_reader.pages[0]
 
-            # Obtener dimensiones de la pagina
-            media_box = original_page.mediabox
-            page_width = float(media_box.width)
-            page_height = float(media_box.height)
+                # Obtener dimensiones de la pagina
+                media_box = original_page.mediabox
+                page_width = float(media_box.width)
+                page_height = float(media_box.height)
 
-            logger.info(f"[COMPOSE_PDF] Dimensiones PDF: {page_width:.1f} x {page_height:.1f} pts")
+                logger.info(f"[COMPOSE_PDF] Dimensiones PDF: {page_width:.1f} x {page_height:.1f} pts")
 
-            # 3. Crear capa de texto OCR invisible
-            ocr_buffer = io.BytesIO()
-            c = canvas.Canvas(ocr_buffer, pagesize=(page_width, page_height))
+                # 3. Crear capa de texto OCR invisible
+                ocr_buffer = io.BytesIO()
+                c = canvas.Canvas(ocr_buffer, pagesize=(page_width, page_height))
 
-            # Calcular factor de escala: del PNG original (donde se hizo OCR) al PDF
-            # Las coordenadas OCR vienen del PNG original a img_dpi
-            scale_x = page_width / img_width_orig
-            scale_y = page_height / img_height_orig
+                # Calcular factor de escala: del PNG original (donde se hizo OCR) al PDF
+                # Las coordenadas OCR vienen del PNG original a img_dpi
+                scale_x = page_width / img_width_orig
+                scale_y = page_height / img_height_orig
 
-            logger.info(f"[COMPOSE_PDF] Factores de escala OCR->PDF: x={scale_x:.3f}, y={scale_y:.3f}")
+                logger.info(f"[COMPOSE_PDF] Factores de escala OCR->PDF: x={scale_x:.3f}, y={scale_y:.3f}")
 
-            # Superponer texto OCR invisible
-            for i, text in enumerate(text_lines):
-                if i < len(coordinates) and len(coordinates[i]) > 0:
-                    confidence = confidences[i] if i < len(confidences) else 0.0
+                # Superponer texto OCR invisible
+                for i, text in enumerate(text_lines):
+                    if i < len(coordinates) and len(coordinates[i]) > 0:
+                        confidence = confidences[i] if i < len(confidences) else 0.0
 
-                    # Filtrar texto con baja confianza
-                    if confidence < 0.3:
-                        continue
+                        # Filtrar texto con baja confianza
+                        if confidence < 0.3:
+                            continue
 
-                    try:
-                        coords = coordinates[i]
+                        try:
+                            coords = coordinates[i]
 
-                        # Calcular coordenadas del texto
-                        x_coords = [point[0] for point in coords]
-                        y_coords = [point[1] for point in coords]
+                            # Calcular coordenadas del texto
+                            x_coords = [point[0] for point in coords]
+                            y_coords = [point[1] for point in coords]
 
-                        x_min, x_max = min(x_coords), max(x_coords)
-                        y_min, y_max = min(y_coords), max(y_coords)
+                            x_min, x_max = min(x_coords), max(x_coords)
+                            y_min, y_max = min(y_coords), max(y_coords)
 
-                        # Convertir coordenadas de PNG original a PDF usando factores de escala
-                        x_pdf = x_min * scale_x
-                        y_pdf = page_height - (y_max * scale_y)
-                        height_pdf = (y_max - y_min) * scale_y
+                            # Convertir coordenadas de PNG original a PDF usando factores de escala
+                            x_pdf = x_min * scale_x
+                            y_pdf = page_height - (y_max * scale_y)
+                            height_pdf = (y_max - y_min) * scale_y
 
-                        # Calcular tamano de fuente
-                        font_size = max(6, min(height_pdf * 0.8, 20))
+                            # Calcular tamano de fuente
+                            font_size = max(6, min(height_pdf * 0.8, 20))
 
-                        # Dibujar texto invisible para busqueda
-                        c.setFillColorRGB(1, 1, 1, alpha=0.01)  # Casi transparente
-                        c.setFont("Helvetica", font_size)
-                        c.drawString(x_pdf, y_pdf, text)
+                            # Dibujar texto invisible para busqueda
+                            c.setFillColorRGB(1, 1, 1, alpha=0.01)  # Casi transparente
+                            c.setFont("Helvetica", font_size)
+                            c.drawString(x_pdf, y_pdf, text)
 
-                    except Exception as e:
-                        logger.debug(f"[COMPOSE_PDF] Error posicionando texto '{text}': {e}")
-                        continue
+                        except Exception as e:
+                            logger.debug(f"[COMPOSE_PDF] Error posicionando texto '{text}': {e}")
+                            continue
 
-            c.save()
-            ocr_buffer.seek(0)
+                c.save()
+                ocr_buffer.seek(0)
 
-            # 4. Combinar PDF base con capa OCR
-            from PyPDF2 import PdfWriter
+                # 4. Combinar PDF base con capa OCR
+                from PyPDF2 import PdfWriter
 
-            pdf_writer = PdfWriter()
+                pdf_writer = PdfWriter()
 
-            # Leer capa OCR
-            ocr_pdf = PyPDF2.PdfReader(ocr_buffer)
-            ocr_page = ocr_pdf.pages[0]
+                # Leer capa OCR
+                ocr_pdf = PyPDF2.PdfReader(ocr_buffer)
+                ocr_page = ocr_pdf.pages[0]
 
-            # Superponer OCR sobre pagina original
-            original_page.merge_page(ocr_page)
-            pdf_writer.add_page(original_page)
+                # Superponer OCR sobre pagina original
+                original_page.merge_page(ocr_page)
+                pdf_writer.add_page(original_page)
 
-            # Cerrar archivo base
-            pdf_file.close()
-
-            # Guardar resultado final
-            buffer = io.BytesIO()
-            pdf_writer.write(buffer)
+                # Guardar resultado final
+                buffer = io.BytesIO()
+                pdf_writer.write(buffer)
 
         else:
             # FLUJO VECTORIAL: PDF original como base + texto OCR de imagenes
@@ -1668,87 +1667,84 @@ def compose_pdf_ocr(base_source, ocr_data, out_spdf, is_scanned, out_dpi=72):
             from reportlab.pdfgen import canvas
             from reportlab.lib.pagesizes import letter
 
-            # Leer PDF original
-            pdf_file = open(base_source, 'rb')
-            pdf_reader = PyPDF2.PdfReader(pdf_file)
-            original_page = pdf_reader.pages[0]
+            # v5.4: Usar context manager para asegurar cierre del archivo
+            with open(base_source, 'rb') as pdf_file:
+                pdf_reader = PyPDF2.PdfReader(pdf_file)
+                original_page = pdf_reader.pages[0]
 
-            # Obtener dimensiones de la pagina original
-            media_box = original_page.mediabox
-            page_width = float(media_box.width)
-            page_height = float(media_box.height)
+                # Obtener dimensiones de la pagina original
+                media_box = original_page.mediabox
+                page_width = float(media_box.width)
+                page_height = float(media_box.height)
 
-            # Calcular factor de escala: del DPI del PNG a 72 DPI del PDF
-            scale_factor = 72.0 / img_dpi
-            logger.info(f"[COMPOSE_PDF] Factor de escala: {scale_factor:.3f} ({img_dpi} DPI -> 72 DPI)")
+                # Calcular factor de escala: del DPI del PNG a 72 DPI del PDF
+                scale_factor = 72.0 / img_dpi
+                logger.info(f"[COMPOSE_PDF] Factor de escala: {scale_factor:.3f} ({img_dpi} DPI -> 72 DPI)")
 
-            # Crear PDF temporal con solo texto OCR
-            ocr_buffer = io.BytesIO()
-            c = canvas.Canvas(ocr_buffer, pagesize=(page_width, page_height))
+                # Crear PDF temporal con solo texto OCR
+                ocr_buffer = io.BytesIO()
+                c = canvas.Canvas(ocr_buffer, pagesize=(page_width, page_height))
 
-            # Solo superponer texto OCR (de imagenes extraidas)
-            for i, text in enumerate(text_lines):
-                if i < len(coordinates) and len(coordinates[i]) > 0:
-                    confidence = confidences[i] if i < len(confidences) else 0.0
+                # Solo superponer texto OCR (de imagenes extraidas)
+                for i, text in enumerate(text_lines):
+                    if i < len(coordinates) and len(coordinates[i]) > 0:
+                        confidence = confidences[i] if i < len(confidences) else 0.0
 
-                    if confidence < 0.3:
-                        continue
+                        if confidence < 0.3:
+                            continue
 
-                    try:
-                        coords = coordinates[i]
+                        try:
+                            coords = coordinates[i]
 
-                        # Las coordenadas del OCR vienen del PNG a img_dpi
-                        # Necesitamos escalarlas a 72 DPI para el PDF
-                        x_coords = [point[0] for point in coords]
-                        y_coords = [point[1] for point in coords]
+                            # Las coordenadas del OCR vienen del PNG a img_dpi
+                            # Necesitamos escalarlas a 72 DPI para el PDF
+                            x_coords = [point[0] for point in coords]
+                            y_coords = [point[1] for point in coords]
 
-                        x_min, x_max = min(x_coords), max(x_coords)
-                        y_min, y_max = min(y_coords), max(y_coords)
+                            x_min, x_max = min(x_coords), max(x_coords)
+                            y_min, y_max = min(y_coords), max(y_coords)
 
-                        # APLICAR FACTOR DE ESCALA a las coordenadas
-                        x_pdf = x_min * scale_factor
-                        y_pdf = page_height - (y_max * scale_factor)
-                        height_pdf = (y_max - y_min) * scale_factor
+                            # APLICAR FACTOR DE ESCALA a las coordenadas
+                            x_pdf = x_min * scale_factor
+                            y_pdf = page_height - (y_max * scale_factor)
+                            height_pdf = (y_max - y_min) * scale_factor
 
-                        font_size = max(6, min(height_pdf * 0.8, 20))
+                            font_size = max(6, min(height_pdf * 0.8, 20))
 
-                        logger.debug(f"[COMPOSE_PDF] Texto '{text[:20]}...': orig({x_min:.0f},{y_min:.0f}) -> pdf({x_pdf:.0f},{y_pdf:.0f})")
+                            logger.debug(f"[COMPOSE_PDF] Texto '{text[:20]}...': orig({x_min:.0f},{y_min:.0f}) -> pdf({x_pdf:.0f},{y_pdf:.0f})")
 
-                        # Dibujar texto invisible
-                        c.setFillColorRGB(1, 1, 1, alpha=0.01)
-                        c.setFont("Helvetica", font_size)
-                        c.drawString(x_pdf, y_pdf, text)
+                            # Dibujar texto invisible
+                            c.setFillColorRGB(1, 1, 1, alpha=0.01)
+                            c.setFont("Helvetica", font_size)
+                            c.drawString(x_pdf, y_pdf, text)
 
-                    except Exception as e:
-                        logger.debug(f"[COMPOSE_PDF] Error posicionando texto vectorial '{text}': {e}")
-                        continue
+                        except Exception as e:
+                            logger.debug(f"[COMPOSE_PDF] Error posicionando texto vectorial '{text}': {e}")
+                            continue
 
-            # Asegurar que siempre hay una pagina aunque no haya texto
-            if len(text_lines) == 0:
-                c.showPage()  # Crear pagina vacia
+                # Asegurar que siempre hay una pagina aunque no haya texto
+                if len(text_lines) == 0:
+                    c.showPage()  # Crear pagina vacia
 
-            c.save()
-            ocr_buffer.seek(0)
+                c.save()
+                ocr_buffer.seek(0)
 
-            # Combinar PDF original con capa OCR
-            from PyPDF2 import PdfWriter
+                # Combinar PDF original con capa OCR
+                from PyPDF2 import PdfWriter
 
-            pdf_writer = PdfWriter()
+                pdf_writer = PdfWriter()
 
-            # Leer capa OCR
-            ocr_pdf = PyPDF2.PdfReader(ocr_buffer)
-            ocr_page = ocr_pdf.pages[0]
+                # Leer capa OCR
+                ocr_pdf = PyPDF2.PdfReader(ocr_buffer)
+                ocr_page = ocr_pdf.pages[0]
 
-            # Superponer OCR sobre pagina original
-            original_page.merge_page(ocr_page)
-            pdf_writer.add_page(original_page)
+                # Superponer OCR sobre pagina original
+                original_page.merge_page(ocr_page)
+                pdf_writer.add_page(original_page)
 
-            # Cerrar archivo
-            pdf_file.close()
-
-            # Guardar resultado
-            buffer = io.BytesIO()
-            pdf_writer.write(buffer)
+                # Guardar resultado
+                buffer = io.BytesIO()
+                pdf_writer.write(buffer)
 
         # Guardar PDF final
         buffer.seek(0)
@@ -2026,6 +2022,9 @@ def ocr():
         if not filename_param:
             return jsonify({'error': 'filename required'}), 400
 
+        # v5.4: Validar rutas para prevenir path traversal
+        ALLOWED_BASE_DIRS = ['/home/n8n', '/tmp']
+
         # Extraer paths y configuracion
         if filename_param.startswith('/'):
             full_path = filename_param
@@ -2034,6 +2033,18 @@ def ocr():
         else:
             filename = filename_param
             n8nHomeDir = request.form.get('n8nHomeDir', '/home/n8n')
+
+        # v5.4: Validar que n8nHomeDir esté en directorios permitidos
+        resolved_path = os.path.realpath(n8nHomeDir)
+        is_allowed = any(resolved_path.startswith(allowed) for allowed in ALLOWED_BASE_DIRS)
+        if not is_allowed:
+            logger.warning(f"[OCR] Path traversal attempt blocked: {n8nHomeDir} -> {resolved_path}")
+            return jsonify({'error': 'Invalid path', 'allowed_dirs': ALLOWED_BASE_DIRS}), 403
+
+        # v5.4: Prevenir path traversal en filename
+        if '..' in filename or filename.startswith('/'):
+            logger.warning(f"[OCR] Invalid filename blocked: {filename}")
+            return jsonify({'error': 'Invalid filename'}), 400
 
         base_name = Path(filename).stem
         ext = Path(filename).suffix.lower()
@@ -2052,7 +2063,8 @@ def ocr():
             except ValueError:
                 logger.warning(f"[OCR] Valor invalido para min_angle: {min_angle_param}")
         else:
-            ROTATION_CONFIG['MIN_SKEW_ANGLE'] = float(os.getenv('ROTATION_MIN_SKEW_ANGLE'))
+            # v5.4: Añadido valor por defecto para evitar TypeError si ENV no existe
+            ROTATION_CONFIG['MIN_SKEW_ANGLE'] = float(os.getenv('ROTATION_MIN_SKEW_ANGLE', '0.2'))
 
         # VERIFICAR Y CARGAR MODELOS SI ES NECESARIO
         if not doc_preprocessor:
