@@ -1,6 +1,13 @@
-# PaddleOCR WebComunica v5.3
+# PaddleOCR WebComunica v5.4
 
 OCR minimalista y eficiente basado en PaddleOCR 3.x con API REST profesional.
+
+## Cambios v5.4
+- **Bug Fix**: os.getenv sin default corregido
+- **Bug Fix**: Context managers para archivos PDF (previene fugas)
+- **Seguridad**: Validación path traversal en `/ocr` endpoint
+- **Código**: OCR_CONFIG unificado con init_ocr()
+- Verificado con 10 pruebas: confianza promedio 0.927
 
 ## Cambios v5.3
 - **BUG CRÍTICO**: Corregidas funciones inexistentes (`initialize_*` → `init_*`)
