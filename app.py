@@ -14,6 +14,7 @@ import time
 import math
 import tempfile
 import threading  # v5.5: Thread-safety para ocr_instance
+import uuid  # v5.5: UUID único para archivos temporales
 import cv2
 import numpy as np
 from pathlib import Path
@@ -125,8 +126,10 @@ OCR_CONFIG = {
 doc_preprocessor = None
 ocr_instance = None
 ocr_initialized = False
-# v5.5: Lock para thread-safety en llamadas OCR concurrentes
-ocr_lock = threading.Lock()
+# v5.5: Semáforo para serializar peticiones OCR y evitar std::exception
+# Limita a 1 petición OCR simultánea para evitar race conditions en PaddleOCR
+ocr_semaphore = threading.Semaphore(1)
+ocr_lock = threading.Lock()  # Lock adicional para operaciones atómicas
 ocr_work_dpi = OCR_CONFIG['ocr_work_dpi']
 ocr_out_dpi = OCR_CONFIG['ocr_out_dpi']
 
@@ -1236,42 +1239,42 @@ def create_spdf(n8nHomeDir, base_name, in_pdf, spdf, page_num):
     ocr_start = time.time()
 
     # Reintentos para OCR
-    # v5.5: Usar lock para thread-safety en peticiones concurrentes
+    # v5.5: Semáforo serializa peticiones OCR para evitar std::exception
+    # PaddleOCR no es thread-safe, solo permitimos 1 petición OCR a la vez
     page_ocr_result = None
     max_attempts = 5
     consecutive_std_errors = 0
-    for attempt in range(1, max_attempts + 1):
-        try:
-            # v5.5: Lock protege llamada a predict() para evitar race conditions
-            with ocr_lock:
+
+    with ocr_semaphore:  # v5.5: Serializar acceso al modelo OCR
+        for attempt in range(1, max_attempts + 1):
+            try:
                 page_ocr_result = ocr_instance.predict(out_png)
-            ocr_time = time.time() - ocr_start
-            if page_ocr_result and len(page_ocr_result) > 0:
-                texts = page_ocr_result[0].get('rec_texts', [])
-                scores = page_ocr_result[0].get('rec_scores', [])
-                avg_conf = sum(scores)/len(scores) if scores else 0
-                logger.info(f"[OCR] Pagina {page_num}: {len(texts)} bloques detectados")
-                logger.info(f"[OCR] Confianza promedio: {avg_conf:.3f}")
-                logger.info(f"[OCR] Tiempo OCR: {ocr_time:.2f}s")
-            else:
-                logger.warning(f"[OCR] Pagina {page_num}: Sin texto detectado")
-                page_ocr_result = None
-            break  # Exito, salir del bucle de reintentos
+                ocr_time = time.time() - ocr_start
+                if page_ocr_result and len(page_ocr_result) > 0:
+                    texts = page_ocr_result[0].get('rec_texts', [])
+                    scores = page_ocr_result[0].get('rec_scores', [])
+                    avg_conf = sum(scores)/len(scores) if scores else 0
+                    logger.info(f"[OCR] Pagina {page_num}: {len(texts)} bloques detectados")
+                    logger.info(f"[OCR] Confianza promedio: {avg_conf:.3f}")
+                    logger.info(f"[OCR] Tiempo OCR: {ocr_time:.2f}s")
+                else:
+                    logger.warning(f"[OCR] Pagina {page_num}: Sin texto detectado")
+                    page_ocr_result = None
+                break  # Exito, salir del bucle de reintentos
 
-        except Exception as e:
-            error_msg = str(e)
-            logger.error(f"[OCR] Error en pagina {page_num} (intento {attempt}): {error_msg}")
+            except Exception as e:
+                error_msg = str(e)
+                logger.error(f"[OCR] Error en pagina {page_num} (intento {attempt}): {error_msg}")
 
-            # Detectar si es std::exception
-            if "std::exception" in error_msg:
-                consecutive_std_errors += 1
+                # Detectar si es std::exception
+                if "std::exception" in error_msg:
+                    consecutive_std_errors += 1
 
-                # Al segundo error consecutivo, reinicializar
-                if consecutive_std_errors >= 2:
-                    logger.warning("[OCR] Detectados 2 errores std::exception consecutivos - reinicializando modelo OCR...")
+                    # Al segundo error consecutivo, reinicializar
+                    if consecutive_std_errors >= 2:
+                        logger.warning("[OCR] Detectados 2 errores std::exception consecutivos - reinicializando modelo OCR...")
 
-                    # v5.5: Lock protege reinicialización del modelo
-                    with ocr_lock:
+                        # Reinicializar modelo (ya estamos dentro del semáforo)
                         ocr_instance = None
                         ocr_initialized = False
 
@@ -1287,13 +1290,13 @@ def create_spdf(n8nHomeDir, base_name, in_pdf, spdf, page_num):
                             logger.error("[OCR] No se pudo reinicializar OCR")
                             raise Exception("OCR model corrupted and cannot reinitialize")
 
-            # Esperar antes del siguiente intento
-            if attempt < max_attempts:
-                logger.info(f"[OCR] Esperando 1 segundo antes del siguiente intento...")
-                time.sleep(1)
-            else:
-                logger.error(f"[OCR] Error definitivo tras {max_attempts} intentos")
-                raise
+                # Esperar antes del siguiente intento
+                if attempt < max_attempts:
+                    logger.info(f"[OCR] Esperando 1 segundo antes del siguiente intento...")
+                    time.sleep(1)
+                else:
+                    logger.error(f"[OCR] Error definitivo tras {max_attempts} intentos")
+                    raise
 
     # Procesar resultado OCR
     if page_ocr_result and len(page_ocr_result) > 0:
@@ -2225,7 +2228,9 @@ def process():
         os.makedirs(f"{n8nHomeDir}/in", exist_ok=True)
         # v5.3: Usar secure_filename para prevenir path traversal
         safe_name = secure_filename(file.filename)
-        temp_filename = f"proc_{int(time.time())}_{safe_name}"
+        # v5.5: UUID único para evitar colisiones en peticiones concurrentes
+        unique_id = uuid.uuid4().hex[:8]
+        temp_filename = f"proc_{int(time.time())}_{unique_id}_{safe_name}"
         temp_file_path = f"{n8nHomeDir}/in/{temp_filename}"
         file.save(temp_file_path)
 
