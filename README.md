@@ -15,10 +15,19 @@ OCR minimalista y eficiente basado en PaddleOCR 3.x con API REST profesional.
 
 | Endpoint | Método | Descripción |
 |----------|--------|-------------|
+| `/` | GET | **Dashboard web** - Interfaz visual para probar OCR |
 | `/health` | GET | Estado del servidor y modelos |
 | `/stats` | GET | Estadísticas de uso |
 | `/process` | POST | **Principal** - Procesa documentos con formato seleccionable |
 | `/ocr` | POST | Compatibilidad con n8n (archivos en /home/n8n/in/) |
+
+## Dashboard Web
+
+Accede a `http://localhost:8505/` para usar la interfaz visual:
+
+- Arrastra y suelta PDF/imágenes
+- Selecciona formato: Layout (tablas) o Normal
+- Visualiza resultados con estadísticas
 
 ## Uso
 
@@ -129,11 +138,26 @@ Comparativa con versión extendida (7071 líneas):
 - 4GB RAM mínimo
 - CPU con instrucciones AVX (no funciona en VPS básicos)
 
+## Despliegue en EasyPanel
+
+Para desplegar en EasyPanel (sin docker-compose), consulta la guia completa:
+
+**[EASYPANEL.md](EASYPANEL.md)**
+
+Resumen rapido:
+1. **Repo**: `https://github.com/webcomunicasolutions/paddleocr_webcomunicav5`
+2. **Branch**: `main`
+3. **Puerto**: `8503`
+4. **RAM minima**: 4GB
+5. **Volumenes**:
+   - `/home/n8n/.paddlex` (cache modelos)
+   - `/home/n8n/.paddleocr` (cache modelos)
+
 ## Licencia
 
 MIT License
 
-## Créditos
+## Creditos
 
 - Base OCR: Proyecto de Paco (PaddleOCR optimizado)
 - API REST y Layout: WebComunica Solutions
