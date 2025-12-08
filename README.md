@@ -165,6 +165,62 @@ Comparativa con versión extendida (7071 líneas):
 └─────────────────────────────────────────┘
 ```
 
+## Concurrencia y Escalado
+
+### Problema: PaddleOCR NO es Thread-Safe
+
+PaddleOCR tiene un bug conocido donde peticiones concurrentes causan `RuntimeError: std::exception`.
+
+**Referencias:**
+- [Issue #16238](https://github.com/PaddlePaddle/PaddleOCR/issues/16238) - std::exception en threads
+- [Issue #11605](https://github.com/PaddlePaddle/PaddleOCR/issues/11605) - No se puede lograr concurrencia
+
+### Solución Actual: Semáforo (v5.5)
+
+Usamos `threading.Semaphore(1)` para serializar peticiones OCR:
+
+```python
+ocr_semaphore = threading.Semaphore(1)
+
+with ocr_semaphore:
+    result = ocr_instance.predict(image)
+```
+
+**Ventajas:**
+- Simple y robusto
+- 0 errores std::exception
+- Bajo uso de memoria (1 instancia)
+
+**Limitación:**
+- 1 petición OCR a la vez (throughput limitado)
+
+### Alternativa Futura: PaddleServing (Alta Carga)
+
+Para escenarios de alta demanda (>100 req/min), considerar PaddleServing oficial:
+
+```bash
+# Instalación
+paddlex --install serving
+
+# Lanzar servidor OCR
+paddlex --serve --pipeline OCR --port 8080
+```
+
+**Ventajas:**
+- Diseñado para alta concurrencia
+- Soporte multi-lenguaje (C++, Java, Go, Node.js)
+- Basado en NVIDIA Triton para máximo rendimiento
+
+**Documentación:** [PaddleOCR Server Deployment](https://www.paddleocr.ai/main/en/version3.x/deployment/serving.html)
+
+### Recomendación según Tráfico
+
+| Tráfico | Solución | RAM |
+|---------|----------|-----|
+| Bajo (<10 req/min) | Semaphore(1) actual | 4GB |
+| Medio (10-50 req/min) | Múltiples contenedores + balanceador | 4GB x N |
+| Alto (>100 req/min) | PaddleServing | Variable |
+
 ## Requisitos
 
 - Docker con soporte AVX/AVX2

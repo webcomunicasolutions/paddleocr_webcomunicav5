@@ -126,10 +126,10 @@ OCR_CONFIG = {
 doc_preprocessor = None
 ocr_instance = None
 ocr_initialized = False
+
 # v5.5: Semáforo para serializar peticiones OCR y evitar std::exception
-# Limita a 1 petición OCR simultánea para evitar race conditions en PaddleOCR
+# PaddleOCR NO es thread-safe - ver README.md para alternativas de escalado
 ocr_semaphore = threading.Semaphore(1)
-ocr_lock = threading.Lock()  # Lock adicional para operaciones atómicas
 ocr_work_dpi = OCR_CONFIG['ocr_work_dpi']
 ocr_out_dpi = OCR_CONFIG['ocr_out_dpi']
 
