@@ -26,7 +26,7 @@ RUN pip config set global.index-url https://pypi.org/simple/
 # Instalar dependencias Python
 RUN python3.10 -m pip install --upgrade pip && \
     pip install --break-system-packages --no-cache-dir \
-    numpy \
+    "numpy<2" \
     decord \
     opencv-python \
     paddleocr \
