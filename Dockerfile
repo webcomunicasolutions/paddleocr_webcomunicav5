@@ -20,12 +20,15 @@ RUN apt update && apt install -y \
     && rm -rf /var/lib/apt/lists/* \
     && sed -i '/<policy domain="coder" rights="none" pattern="PDF"/s/rights="none"/rights="read|write"/' /etc/ImageMagick-6/policy.xml
 
+# FIX: Cambiar a PyPI oficial (la imagen base usa mirror chino no accesible desde Europa)
+RUN pip config set global.index-url https://pypi.org/simple/
+
 # Instalar dependencias Python
 RUN python3.10 -m pip install --upgrade pip && \
     pip install --break-system-packages --no-cache-dir \
     numpy \
     decord \
-    opencv-python==4.6.0.66 \
+    opencv-python \
     paddleocr \
     pdf2image==1.16.3 \
     reportlab==4.0.4 \
