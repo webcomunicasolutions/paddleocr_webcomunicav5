@@ -190,6 +190,122 @@ print(f'Conf: {d[\"stats\"][\"avg_confidence\"]:.3f}, Time: {d[\"stats\"][\"proc
 
 ---
 
+## Fecha: 21/12/2025
+
+### Contexto
+Despliegue en nuevo servidor (GESFAC). El build del contenedor fallaba con múltiples errores.
+
+---
+
+## PROBLEMAS DETECTADOS Y SOLUCIONADOS
+
+### Problema 1: Mirror de pip chino no accesible
+
+| Aspecto | Detalle |
+|---------|---------|
+| **Error** | `[Errno 101] Network is unreachable` al conectar a `pypi.tuna.tsinghua.edu.cn` |
+| **Causa** | La imagen base de Baidu usa mirror de pip en China (Universidad Tsinghua) |
+| **Impacto** | El build falla al intentar instalar dependencias Python |
+
+**Solución en Dockerfile:**
+```dockerfile
+# Añadir ANTES del pip install
+RUN pip config set global.index-url https://pypi.org/simple/
+```
+
+---
+
+### Problema 2: opencv-python==4.6.0.66 no existe
+
+| Aspecto | Detalle |
+|---------|---------|
+| **Error** | `No matching distribution found for opencv-python==4.6.0.66` |
+| **Causa** | Esa versión específica no existe en PyPI (quizás era del mirror chino) |
+| **Impacto** | El build falla al no encontrar la versión |
+
+**Solución en Dockerfile:**
+```dockerfile
+# Cambiar de:
+opencv-python==4.6.0.66
+# A:
+opencv-python
+```
+
+---
+
+### Problema 3: NumPy 2.x incompatible con paddleocr
+
+| Aspecto | Detalle |
+|---------|---------|
+| **Error** | `numpy.core.multiarray failed to import` y `PDX has already been initialized` |
+| **Causa** | NumPy 2.0+ rompe compatibilidad con paquetes compilados para NumPy 1.x |
+| **Impacto** | paddleocr no puede importarse, el servidor arranca pero OCR no funciona |
+
+**Mensaje de error clave:**
+```
+A module that was compiled using NumPy 1.x cannot be run in
+NumPy 2.2.6 as it may crash.
+```
+
+**Solución en Dockerfile:**
+```dockerfile
+# Cambiar de:
+numpy
+# A:
+"numpy<2"
+```
+
+---
+
+## ¿POR QUÉ FUNCIONABA EN EL SERVIDOR VIEJO?
+
+| Factor | Servidor viejo | Servidor nuevo |
+|--------|---------------|----------------|
+| **Contenedor** | Construido hace semanas | Construido HOY |
+| **NumPy** | 1.24.x (versión de entonces) | 2.2.6 (última) |
+| **pip install sin versión** | Instalaba versiones antiguas | Instala últimas versiones |
+
+**Lección clave:** El Dockerfile sin versiones fijadas es una "bomba de tiempo". Cada rebuild puede instalar versiones diferentes.
+
+---
+
+## DOCKERFILE FINAL CORREGIDO
+
+```dockerfile
+# FIX 1: Cambiar a PyPI oficial (la imagen base usa mirror chino)
+RUN pip config set global.index-url https://pypi.org/simple/
+
+# Instalar dependencias Python
+RUN python3.10 -m pip install --upgrade pip && \
+    pip install --break-system-packages --no-cache-dir \
+    "numpy<2" \              # FIX 3: Forzar NumPy 1.x
+    decord \
+    opencv-python \          # FIX 2: Sin versión específica
+    paddleocr \
+    pdf2image==1.16.3 \
+    ...
+```
+
+---
+
+## COMMITS RELACIONADOS
+
+| Commit | Descripción |
+|--------|-------------|
+| `49e6a1e` | fix: Dockerfile compatible con servidores fuera de China |
+| `1404d80` | fix: Restaurar paddleocr en pip install (necesario) |
+| `857c271` | fix: Forzar numpy<2 (paddleocr incompatible con NumPy 2.x) |
+
+---
+
+## RECOMENDACIONES FUTURAS
+
+1. **Fijar versiones críticas** - Especialmente numpy, opencv, paddleocr
+2. **Probar rebuilds periódicamente** - Para detectar incompatibilidades antes de producción
+3. **Documentar la imagen base** - La de Baidu tiene configuraciones ocultas (mirror chino)
+
+---
+
 *Documento creado: 08/12/2025*
-*Última actualización: 08/12/2025*
+*Última actualización: 21/12/2025*
 *Mantenido por: Equipo WebComunica + Claude Code*
