@@ -23,12 +23,13 @@ RUN apt update && apt install -y \
 # FIX: Cambiar a PyPI oficial (la imagen base usa mirror chino no accesible desde Europa)
 RUN pip config set global.index-url https://pypi.org/simple/
 
-# Instalar dependencias Python (paddleocr ya viene en la imagen base PaddleX 3.0.1)
+# Instalar dependencias Python
 RUN python3.10 -m pip install --upgrade pip && \
     pip install --break-system-packages --no-cache-dir \
     numpy \
     decord \
     opencv-python \
+    paddleocr \
     pdf2image==1.16.3 \
     reportlab==4.0.4 \
     pdfplumber \
