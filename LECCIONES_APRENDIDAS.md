@@ -295,6 +295,32 @@ RUN python3.10 -m pip install --upgrade pip && \
 | `49e6a1e` | fix: Dockerfile compatible con servidores fuera de China |
 | `1404d80` | fix: Restaurar paddleocr en pip install (necesario) |
 | `857c271` | fix: Forzar numpy<2 (paddleocr incompatible con NumPy 2.x) |
+| `499a479` | fix: v5.6 Semáforo en doc_preprocessor (concurrencia) |
+
+---
+
+### Problema 4: std::exception con múltiples documentos simultáneos
+
+| Aspecto | Detalle |
+|---------|---------|
+| **Error** | `std::exception` cuando llegan varios documentos a la vez |
+| **Causa** | `doc_preprocessor.predict()` no tenía semáforo, solo `ocr_instance.predict()` |
+| **Impacto** | Errores intermitentes con reintentos, procesamiento más lento |
+
+**Solución en app.py (v5.6):**
+```python
+def fix_orientation(img_path, doc_preprocessor):
+    ...
+    # v5.6: Semáforo para doc_preprocessor (PaddlePaddle no es thread-safe)
+    with ocr_semaphore:
+        output = doc_preprocessor.predict(img_path, batch_size=1)
+```
+
+**Explicación:**
+- PaddlePaddle NO es thread-safe
+- Había DOS modelos: `doc_preprocessor` y `ocr_instance`
+- Solo `ocr_instance` estaba protegido con semáforo
+- Ahora AMBOS usan el mismo semáforo
 
 ---
 
