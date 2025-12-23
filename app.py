@@ -677,7 +677,9 @@ def fix_orientation(img_path, doc_preprocessor):
             logger.info("[IMG] [PADDLE] [ORIENTATION] Modelo no disponible")
             return False, 0, 0.0, False
 
-        output = doc_preprocessor.predict(img_path, batch_size=1)
+        # v5.6: Semáforo para doc_preprocessor (PaddlePaddle no es thread-safe)
+        with ocr_semaphore:
+            output = doc_preprocessor.predict(img_path, batch_size=1)
         orientation = '0'
         confidence = 0.0
 
